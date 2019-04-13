@@ -54,7 +54,8 @@ DEFAULT_PREFS = {
     "extract_path": "",
     "use_name_folder": True,
     "in_place_extraction": True,
-    "sonarr_radarr_support": True
+    "sonarr_radarr_support": True,
+    "labels": ""
 }
 
 if windows_check():
@@ -99,7 +100,7 @@ else:
     # ".bz2": ["bzip2", "-d --keep"],
 
     EXTRACT_COMMANDS = {
-        ".rar": ["unrar", "x -o+ -y"],
+        ".rar": ["unrar", "x -or -y"],
         ".tar": ["tar", "-xf"],
         ".zip": ["unzip", ""],
         ".tar.gz": ["tar", "-xzf"], ".tgz": ["tar", "-xzf"],
@@ -124,7 +125,14 @@ class Core(CorePluginBase):
         self.config = deluge.configmanager.ConfigManager("lcextractor.conf", DEFAULT_PREFS)
         if not self.config["extract_path"]:
             self.config["extract_path"] = deluge.configmanager.ConfigManager("core.conf")["download_location"]
+
+        self.labels=list(filter(None, map(
+            lambda i: i.strip(),
+            self.config["labels"].split(","))
+        ))
+
         component.get("EventManager").register_event_handler("TorrentFinishedEvent", self._on_torrent_finished)
+
     def disable(self):
         component.get("EventManager").deregister_event_handler("TorrentFinishedEvent", self._on_torrent_finished)
 
@@ -135,18 +143,26 @@ class Core(CorePluginBase):
         """
         This is called when a torrent finishes and checks if any files to extract.
         """
-        tid = component.get("TorrentManager").torrents[torrent_id]
-        tid_status = tid.get_status(["save_path", "name"])
+        torrent_manager = component.get("TorrentManager")
+        plugin_manager = component.get("CorePluginManager")
+
+        torrent = torrent_manager.torrents[torrent_id]
+        torrent_status = torrent.get_status(["save_path", "name"])
+        torrent_label = plugin_manager.get_status(torrent_id, ["label"])["label"]
+
+        if self.config["labels"] and torrent_label not in self.config["labels"]:
+            log.info("EXTRACTOR: Skipping extraction for label %s: %s", torrent_label, torrent_status["name"])
+            return
 
         if self.config["sonarr_radarr_support"]:
-            log.info("EXTRACTOR: Setting is_finished to false: %s", tid_status["name"])
+            log.info("EXTRACTOR: Setting is_finished to false: %s", torrent_status["name"])
             # set is_finished to False so Sonarr and Radarr won't process download
-            tid.is_finished = False
+            torrent.is_finished = False
 
         # keep track of total extraction jobs for torrent... store in list so it is mutable. index 0 = total, index 1 = complete count
         extraction_count = [0, 0]
 
-        files = tid.get_files()
+        files = torrent.get_files()
         for f in files:
             file_root, file_ext = os.path.splitext(f["path"])
             file_ext_sec = os.path.splitext(file_root)[1]
@@ -162,16 +178,16 @@ class Core(CorePluginBase):
                     continue
 
             cmd = EXTRACT_COMMANDS[file_ext]
-            fpath = os.path.join(tid_status["save_path"], os.path.normpath(f["path"]))
-            
+            fpath = os.path.join(torrent_status["save_path"], os.path.normpath(f["path"]))
+
             # Get the destination path
             dest = os.path.normpath(self.config["extract_path"])
-            name_dest = os.path.join(dest, tid_status["name"])
+            name_dest = os.path.join(dest, torrent_status["name"])
 
             # Override destination if in_place_extraction is set
             if self.config["in_place_extraction"]:
-                dest = tid_status["save_path"]
-                name_dest = os.path.join(dest, tid_status["name"])
+                dest = torrent_status["save_path"]
+                name_dest = os.path.join(dest, torrent_status["name"])
 
             # make sure path does not exist or torrent parent directory matches the torrent name.... occasionally name is actually just the file
             if self.config["use_name_folder"] and ((not os.path.exists(name_dest)) or os.path.isdir(name_dest)):
@@ -192,8 +208,8 @@ class Core(CorePluginBase):
 
                 # if sonarr_radarr_support is enabled and we have extracted all files
                 if sonarr_radarr_support and extraction_count[0] == extraction_count[1]:
-                    log.info("EXTRACTOR: Setting is_finished to true: %s", tid_status["name"])
-                    tid = component.get("TorrentManager").torrents[torrent_id]
+                    log.info("EXTRACTOR: Setting is_finished to true: %s", torrent_status["name"])
+                    tid = torrent_manager.torrents[torrent_id]
                     # set is_finished back to True
                     tid.is_finished = True
 
@@ -212,11 +228,11 @@ class Core(CorePluginBase):
             log.debug("EXTRACTOR: Extracting %s from %s with %s %s to %s", fpath, torrent_id, cmd[0], cmd[1], dest)
             d = getProcessOutputAndValue(cmd[0], cmd[1].split() + [str(fpath)], os.environ, str(dest))
             d.addCallback(on_extract, torrent_id, fpath, self.config["sonarr_radarr_support"], extraction_count)
-        
+
         if self.config["sonarr_radarr_support"] and extraction_count[0] == 0:
-            log.info("EXTRACTOR: Setting is_finished to true: %s", tid_status["name"])
+            log.info("EXTRACTOR: Setting is_finished to true: %s", torrent_status["name"])
             # set back to true since there are no files to extract
-            tid.is_finished = True
+            torrent.is_finished = True
 
     @export
     def set_config(self, config):

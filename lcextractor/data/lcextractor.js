@@ -49,6 +49,12 @@ Deluge.ux.preferences.LCExtractorPage = Ext.extend(Ext.Panel, {
             width: '97%'
         });
 
+        this.labels = fieldset.add({
+            fieldLabel: _('Supported labels:'),
+            labelSeparator : '',
+            name: 'labels',
+            width: '97%'
+        });
 
         this.use_name_folder = fieldset.add({
             xtype: 'checkbox',
@@ -84,6 +90,7 @@ Deluge.ux.preferences.LCExtractorPage = Ext.extend(Ext.Panel, {
           var config = { }
 
           config['extract_path'] = this.extract_path.getValue();
+          config['labels'] = this.labels.getValue();
           config['use_name_folder'] = this.use_name_folder.getValue();
           config['in_place_extraction'] = this.in_place_extraction.getValue();
           config['sonarr_radarr_support'] = this.sonarr_radarr_support.getValue();
@@ -100,6 +107,7 @@ Deluge.ux.preferences.LCExtractorPage = Ext.extend(Ext.Panel, {
         deluge.client.lcextractor.get_config({
             success: function(config) {
                 this.extract_path.setValue(config['extract_path']);
+                this.labels.setValue(config['labels']);
                 this.use_name_folder.setValue(config['use_name_folder']);
                 this.in_place_extraction.setValue(config['in_place_extraction']);
                 this.sonarr_radarr_support.setValue(config['sonarr_radarr_support']);
