@@ -37,17 +37,17 @@
 #
 #
 
-from setuptools import setup
+from setuptools import find_packages, setup
 
-__plugin_name__ = "LCExtractor"
-__author__ = "levic92"
-__author_email__ = ""
-__version__ = "0.6.2.2"
-__url__ = "http://deluge-torrent.org"
-__license__ = "GPLv3"
-__description__ = "Extract files upon torrent completion"
+__plugin_name__ = 'PVRExtractor'
+__author__ = 'avatar'
+__author_email__ = ''
+__version__ = '0.7.0.1'
+__url__ = 'http://deluge-torrent.org'
+__license__ = 'GPLv3'
+__description__ = 'Extract files upon torrent completion with special handling of PVR applications. '
 __long_description__ = """
-Extract files upon torrent completion
+Extract files upon torrent completion with special handling of Sonarr and Radarr.
 
 Supports: .rar, .tar, .zip, .7z .tar.gz, .tgz, .tar.bz2, .tbz .tar.lzma, .tlz, .tar.xz, .txz
 
@@ -56,7 +56,7 @@ Windows support: .rar, .zip, .tar, .7z, .xz, .lzma
 
 Note: Will not extract with 'Move Completed' enabled (fixeed in deluge v1.3.8)
 """
-__pkg_data__ = {__plugin_name__.lower(): ["template/*", "data/*"]}
+__pkg_data__ = {__plugin_name__.lower(): ['data/*']}
 
 setup(
     name=__plugin_name__,
@@ -66,10 +66,10 @@ setup(
     author_email=__author_email__,
     url=__url__,
     license=__license__,
-    long_description=__long_description__ if __long_description__ else __description__,
+    long_description=__long_description__,
 
-    packages=[__plugin_name__.lower()],
-    package_data = __pkg_data__,
+    packages=find_packages(),
+    package_data=__pkg_data__,
 
     entry_points="""
     [deluge.plugin.core]
@@ -78,5 +78,5 @@ setup(
     %s = %s:GtkUIPlugin
     [deluge.plugin.web]
     %s = %s:WebUIPlugin
-    """ % ((__plugin_name__, __plugin_name__.lower())*3)
+    """ % ((__plugin_name__, __plugin_name__.lower()) * 3),
 )

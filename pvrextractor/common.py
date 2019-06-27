@@ -1,11 +1,7 @@
 #
-# webui.py
+# common.py
 #
 # Copyright (C) 2009 Andrew Resch <andrewresch@gmail.com>
-#
-# Basic plugin template created by:
-# Copyright (C) 2008 Martijn Voncken <mvoncken@gmail.com>
-# Copyright (C) 2007-2009 Andrew Resch <andrewresch@gmail.com>
 #
 # Deluge is free software.
 #
@@ -37,19 +33,12 @@
 #
 #
 
-from deluge.log import LOG as log
-from deluge.ui.client import client
-from deluge import component
-from deluge.plugins.pluginbase import WebPluginBase
+from __future__ import unicode_literals
 
-from common import get_resource
+import os.path
 
-class WebUI(WebPluginBase):
-    def enable(self):
-        pass
+from pkg_resources import resource_filename
 
-    def disable(self):
-        pass
 
-    scripts = [get_resource("lcextractor.js")]
-    debug_scripts = scripts
+def get_resource(filename):
+    return resource_filename(__package__, os.path.join("data", filename))
