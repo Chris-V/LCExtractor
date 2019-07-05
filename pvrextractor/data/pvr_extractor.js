@@ -128,9 +128,13 @@ Deluge.plugins.PVRExtractorPlugin = Ext.extend(Deluge.Plugin, {
 
     onDisable: function () {
         deluge.preferences.removePage(this.prefsPage);
+        this.prefsPage = null;
     },
 
     onEnable: function () {
+        if(this.prefsPage) {
+            this.onDisable()
+        }
         this.prefsPage = deluge.preferences.addPage(new Deluge.ux.preferences.PVRExtractorPage());
     },
 });

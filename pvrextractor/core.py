@@ -51,6 +51,9 @@ from deluge.plugins.pluginbase import CorePluginBase
 from twisted.internet.utils import getProcessOutputAndValue
 from twisted.python.procutils import which
 
+KEY_TOTAL = 'total'
+KEY_COMPLETED = 'completed'
+
 CONFIG_EXTRACT_PATH = 'extract_path'
 CONFIG_SUPPORTED_LABELS = 'supported_labels'
 CONFIG_NAME_FOLDER = 'use_name_folder'
@@ -153,8 +156,15 @@ if not EXTRACT_COMMANDS:
         'PVR EXTRACTOR: No archive extracting programs found, plugin will be disabled'
     )
 
+log.info('Supported extensions:', )
 
 class Core(CorePluginBase):
+    def __init__(self, plugin_name):
+        super(Core, self).__init__(plugin_name)
+
+        self.config = DEFAULT_PREFS
+        self.supported_labels = []
+
     def enable(self):
         self.config = deluge.configmanager.ConfigManager(
             'pvr_extractor.conf', DEFAULT_PREFS
@@ -182,6 +192,13 @@ class Core(CorePluginBase):
     def update(self):
         pass
 
+    def _is_pvr_support_enabled(self):
+        return bool(self.config[CONFIG_PVR_SUPPORT])
+
+    def _is_label_supported(self, label):
+        supported_labels = self.config[CONFIG_SUPPORTED_LABELS]
+        return not supported_labels or label in supported_labels
+
     def _on_torrent_finished(self, torrent_id):
         """
         This is called when a torrent finishes and checks if any files need
@@ -193,26 +210,29 @@ class Core(CorePluginBase):
             torrent_id, ['label']
         )['label']
 
-        if self.config[CONFIG_SUPPORTED_LABELS] \
-            and torrent_label not in self.config[CONFIG_SUPPORTED_LABELS]:
+        if not self._is_label_supported(torrent_label):
             log.info(
-                'Label %s is not in supported list. Skip extraction: %s',
-                torrent_label, torrent_name
+                '[%s] Label %s is not in supported list. Skip extraction: %s',
+                torrent_id,
+                torrent_label,
+                torrent_name
             )
             return
 
-        if self.config[CONFIG_PVR_SUPPORT]:
+        if self._is_pvr_support_enabled():
             log.info(
-                'Prevent PVR from processing download. Set is_finished to false: %s',
+                '[%s] Prevent PVR from processing download. Set is_finished to false: %s',
+                torrent_id,
                 torrent_name
             )
             torrent.is_finished = False
 
-        extraction_count = self._extract_torrent(torrent)
+        counts = self._extract_torrent(torrent)
 
-        if self.config[CONFIG_PVR_SUPPORT] and extraction_count[0] == 0:
+        if self._is_pvr_support_enabled() and counts[KEY_TOTAL] == 0:
             log.info(
-                'Nothing to extract. Set is_finished to true: %s',
+                '[%s} Nothing to extract. Set is_finished to true: %s',
+                torrent_id,
                 torrent_name
             )
             torrent.is_finished = True
@@ -224,7 +244,7 @@ class Core(CorePluginBase):
 
         # keep track of total extraction jobs... store in list so it is mutable
         # index 0 = total, index 1 = completed
-        extraction_count = [0, 0]
+        counts = dict({KEY_TOTAL: 0, KEY_COMPLETED: 0})
         files = torrent.get_files()
 
         for file in files:
@@ -232,6 +252,11 @@ class Core(CorePluginBase):
 
             command = self._find_extract_command(file_path)
             if command is None:
+                log.info(
+                    '[%s] No extraction command found for file `%s`',
+                    torrent.torrent_id,
+                    file_path,
+                )
                 continue
 
             file_path = os.path.join(
@@ -244,69 +269,86 @@ class Core(CorePluginBase):
             )
 
             if extract_path is None:
+                log.info(
+                    '[%s] No destination path found for %s at torrent_location',
+                    torrent.torrent_id,
+                    torrent_name,
+                    torrent_location,
+                )
                 break
 
-            def _on_extract(result, torrent, file_path, pvr_support, counts):
-                counts[1] += 1
-                log.debug(
-                    'Extraction count total %d, complete %d',
-                    counts[0],
-                    counts[1]
-                )
-
-                if pvr_support and counts[0] == counts[1]:
-                    log.info(
-                        'Setting is_finished to true: %s',
-                        torrent.torrent_id
-                    )
-                    torrent.is_finished = True
-
-                if not result[2]:
-                    log.info(
-                        'Extract successful: %s (%s)',
-                        file_path,
-                        torrent.torrent_id
-                    )
-                else:
-                    log.error(
-                        'Extract failed: %s (%s), %s',
-                        file_path,
-                        torrent.torrent_id,
-                        result[1]
-                    )
-
-            # increment extraction_count
-            extraction_count[0] += 1
-            log.debug(
-                'Extraction count total %d, complete %d',
-                extraction_count[0],
-                extraction_count[1],
-            )
-
-            # Run the command and add callback.
-            log.debug(
-                'Extracting %s from %s with %s %s to %s',
-                file_path,
-                torrent.id,
-                command[0],
-                command[1],
-                extract_path,
-            )
-            d = getProcessOutputAndValue(
-                command[0],
-                command[1].split() + [str(file_path)],
-                os.environ,
-                str(extract_path)
-            )
-            d.addCallback(
-                _on_extract,
+            self._extract_file(
+                counts,
                 torrent,
+                command,
                 file_path,
-                self.config[CONFIG_PVR_SUPPORT],
-                extraction_count,
+                extract_path
             )
 
-        return extraction_count
+        return counts
+
+    def _extract_file(self, counts, torrent, command, source, target):
+        counts[KEY_TOTAL] += 1
+        log.info(
+            '[%s] Extraction count total %d, complete %d',
+            torrent.torrent_id,
+            counts[KEY_TOTAL],
+            counts[KEY_COMPLETED],
+        )
+        log.info(
+            '[%s] Extracting %s with `%s %s` to %s',
+            torrent.torrent_id,
+            source,
+            command[0],
+            command[1],
+            target,
+        )
+
+        d = getProcessOutputAndValue(
+            command[0],
+            command[1].split() + [str(source)],
+            os.environ,
+            str(target)
+        )
+        d.addCallback(
+            self._on_extract,
+            counts,
+            self.config[CONFIG_PVR_SUPPORT],
+            torrent,
+            source,
+        )
+
+    @staticmethod
+    def _on_extract(result, counts, pvr_support, torrent, source):
+        counts[KEY_COMPLETED] += 1
+        log.info(
+            '[%s] Extraction count total %d, complete %d',
+            torrent.torrent_id,
+            counts[KEY_TOTAL],
+            counts[KEY_COMPLETED],
+        )
+
+        if pvr_support and counts[KEY_TOTAL] == counts[KEY_COMPLETED]:
+            log.info(
+                '[%s] Setting is_finished to true: %s',
+                torrent.torrent_id,
+                source,
+            )
+            torrent.is_finished = True
+
+        if not result[2]:
+            log.info(
+                '[%s] Extract successful: %s',
+                torrent.torrent_id,
+                source,
+            )
+        else:
+            log.error(
+                '[%s] Extract failed: %s, %s',
+                torrent.torrent_id,
+                source,
+                result[1]
+            )
 
     def _find_extract_command(self, file_path):
         file_root, file_ext = os.path.splitext(file_path)
@@ -314,17 +356,22 @@ class Core(CorePluginBase):
 
         if file_ext_sec and file_ext_sec + file_ext in EXTRACT_COMMANDS:
             return EXTRACT_COMMANDS[file_ext_sec + file_ext]
-        elif file_ext not in EXTRACT_COMMANDS or file_ext_sec == '.tar':
-            log.debug(
-                'EXTRACTOR: Can\'t extract file with unknown file type: %s',
-                file_path)
-            return None
         elif file_ext == ".rar" and "part" in file_ext_sec:
             part_num = file_ext_sec.split("part")[1]
             if part_num.isdigit() and int(part_num) != 1:
-                log.debug('Skipping remaining multi-part rar files: %s',
-                          file_path)
+                log.debug(
+                    'Skipping remaining multi-part rar files: %s',
+                    file_path
+                )
                 return None
+        elif file_ext in EXTRACT_COMMANDS:
+            return EXTRACT_COMMANDS[file_ext]
+
+        log.debug(
+            'Can\'t extract file with unknown file type: %s',
+            file_path
+        )
+        return None
 
     def _find_destination_path(self, torrent_name, torrent_location):
         extract_path = os.path.normpath(self.config[CONFIG_EXTRACT_PATH])
@@ -347,10 +394,7 @@ class Core(CorePluginBase):
             os.makedirs(extract_path)
         except OSError as ex:
             if not (ex.errno == errno.EEXIST and os.path.isdir(extract_path)):
-                log.error(
-                    'EXTRACTOR: Error creating destination folder: %s',
-                    ex
-                )
+                log.error('Error creating destination folder: %s', ex)
                 return None
 
         return extract_path

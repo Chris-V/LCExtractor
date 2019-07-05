@@ -47,14 +47,11 @@ __url__ = 'http://deluge-torrent.org'
 __license__ = 'GPLv3'
 __description__ = 'Extract files upon torrent completion with special handling of PVR applications. '
 __long_description__ = """
-Extract files upon torrent completion with special handling of Sonarr and Radarr.
+Extract files upon torrent completion with special handling for Sonarr and Radarr.
 
 Supports: .rar, .tar, .zip, .7z .tar.gz, .tgz, .tar.bz2, .tbz .tar.lzma, .tlz, .tar.xz, .txz
 
-Windows support: .rar, .zip, .tar, .7z, .xz, .lzma
-( Requires 7-zip installed: http://www.7-zip.org/ )
-
-Note: Will not extract with 'Move Completed' enabled (fixeed in deluge v1.3.8)
+Windows support (Requires 7-zip installed: http://www.7-zip.org/): .rar, .zip, .tar, .7z, .xz, .lzma
 """
 __pkg_data__ = {__plugin_name__.lower(): ['data/*']}
 
